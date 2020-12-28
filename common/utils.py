@@ -1,6 +1,7 @@
 import os
 import numpy as np
 from torch_geometric.utils import sparse_to_dense
+# from torch_geometric.utils import to_dense_adj
 from torch_geometric.nn import radius_graph
 import networkx as nx
 import torch
@@ -35,6 +36,7 @@ def pt_to_gexf(numpyfile, savepath, sample = [0.1, 0.2, 0.3, 0.4 ,0.5 , 0.6, 0.7
 
         edge_index = radius_graph(coordinates_new, 100, None, True, 8)
         adj = sparse_to_dense(edge_index)
+        # adj = to_dense_adj(edge_index)
         adj = adj.numpy()
         coordinates_new = coordinates_new.numpy()
         G = nx.from_numpy_matrix(adj)
@@ -202,3 +204,6 @@ def filter_sampled_indice(indice, num):
     a = list(filter(lambda x:x not in indice, total))
     return a
 
+if __name__ == '__main__':
+    # pt_to_gexf('/data/hdd1/syh/PycharmProjects/CGC-Net/data/proto/coordinate/CRC/fold_4/2_low_grade/Patient_001_02_Low-Grade.npy','/data/hdd1/syh/PycharmProjects/CGC-Net/data/proto/fix_fuse_hover_knn/0/fold_1/1_normal')
+    pt_to_gexf('/data/hdd1/syh/PycharmProjects/CGC-Net/data_test/proto/coordinate/CRC/fold_1/1_normal/Patient_011_01_Normal_000.npy','/data/hdd1/syh/PycharmProjects/CGC-Net/data_test/proto/coordinate/CRC/fold_1/1_normal')

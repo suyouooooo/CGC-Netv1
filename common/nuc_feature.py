@@ -5,6 +5,10 @@ import numpy as np
 def nuc_stats_new(mask,intensity):
 	mask_crop = mask
 	intensity_crop = intensity
+	# print("type(intensity_crop)  " + str(type(intensity_crop)))
+	# print("intensity_crop.ndim " + str(intensity_crop.ndim))
+	# print("mask_crop.ndim " + str(mask_crop.ndim))
+	# print("type(intensity_crop[mask_crop>0])  " + str(type(intensity_crop[mask_crop>0])))
 	intensity_instance_pixel = np.array(intensity_crop[mask_crop > 0])
 	intensity_background_pixel = np.array(intensity_crop[mask_crop == 0])
 	mean_instance_intensity = intensity_instance_pixel.sum() / \

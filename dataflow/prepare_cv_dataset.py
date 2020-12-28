@@ -1,6 +1,9 @@
 
 import os.path as osp
 import os
+
+import sys
+sys.path.append(os.path.join('/data/hdd1/syh/PycharmProjects/CGC-Net'))
 import torch
 from multiprocessing import Pool
 from torch_geometric.data import Data
@@ -9,7 +12,7 @@ import copy
 import random
 import numpy as np
 import glob
-from common.utils import mkdirs,FarthestSampler,filter_sampled_indice
+from common.utils import mkdirs,FarthestSampler,filter_sampled_indice, mkdir
 
 from setting import CrossValidSetting
 from dataflow.graph_sampler import random_sample_graph2
@@ -77,19 +80,21 @@ def gen(raw_path):
     max_neighbours = 8
     epoch = 30
     graph_sampler = 'knn'
-    mask = 'cia'
+    mask = 'hover'
     sample_method= 'fuse'
     setting = CrossValidSetting()
     processed_dir = os.path.join(setting.root, 'proto',
                                  'fix_%s_%s_%s' % (sample_method, mask, graph_sampler))
 
      # Read data from `raw_path`
+     ## raw_path is /data/hdd1/syh/PycharmProjects/CGC-Net/data/raw/CRC/fold_1/1_normal/xx.png
+     # raw_path is /data/hdd1/syh/PycharmProjects/CGC-Net/data/proto/feature/CRC/fold_1/1_normal/xx(无后缀)
     data =_read_one_raw_graph(raw_path)
      # sample epoch time
     num_nodes = data.x.shape[0]
     num_sample = num_nodes
-    distance_path = os.path.join(setting.root, 'proto', 'distance', 'colorectal',
-                                  raw_path.split('/')[-3], raw_path.split('/')[-1] + '.pt')
+    distance_path = os.path.join(setting.root, 'proto', 'distance', 'CRC',
+                                  raw_path.split('/')[-3], raw_path.split('/')[-2], raw_path.split('/')[-1] + '.pt')
     distance = np.load(distance_path.replace('.pt', '.npy'))
     for i in range(epoch):
        subdata = copy.deepcopy(data)
@@ -106,7 +111,7 @@ def gen(raw_path):
        subdata.edge_index=edge_index
        torch.save(subdata, osp.join(processed_dir,str(i),
                                  raw_path.split('/')[-3],
-                                  raw_path.split('/')[-1].split('.')[0] + '.pt'))
+                                    raw_path.split('/')[-1].split('.')[0] + '.pt'))
 
 def _sampling( num_sample, ratio, distance = None):
     num_subsample = int(num_sample * ratio)
@@ -132,12 +137,12 @@ if __name__ == '__main__':
     original_files = []
     sampling_ratio = 0.5
     sample_method = 'fuse'
-    mask = 'cia'
+    mask = 'hover'
     graph_sampler = 'knn'
     epoch = 30
     sampler = FarthestSampler()
     for fold in folds:
-        for f in glob.iglob(setting.root + '/proto/feature/colorectal/' + fold + '/**/*', recursive=True):
+        for f in glob.iglob(setting.root + '/proto/feature/CRC/' + fold + '/**/*', recursive=True):
             if '.npy' in f:
                 original_files.append(f.strip('.npy'))
     processed_dir = os.path.join(setting.root, 'proto',
@@ -145,9 +150,12 @@ if __name__ == '__main__':
     for f in folds:
 
         for j in range(epoch):
-            mkdirs(osp.join(processed_dir, '%d' % epoch, f))
+            # print('path is : ' + str(osp.join(processed_dir, '%d' % j, f)))
+            mkdir(osp.join(processed_dir, '%d' % j, f))
 
-    p = Pool(32)
+    # print("original_files : " + str(original_files))
+    p = Pool(10)
     arr = p.map(gen,original_files )
     p.close()
     p.join()
+    # gen('/data/hdd1/syh/PycharmProjects/CGC-Net/data/proto/feature/CRC/fold_1/1_normal/Patient_013_03_Normal')

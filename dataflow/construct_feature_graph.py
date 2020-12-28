@@ -10,9 +10,11 @@ from common.nuc_feature import nuc_stats_new,nuc_glcm_stats_new
 import multiprocessing
 import time
 import cv2
+import shutil
 
 
-H, W =3584,3584
+# H, W =3584,3584
+H, W = 1792, 1792
 
 def euc_dist(name):
     arr = np.load(name)
@@ -24,16 +26,19 @@ def euc_dist(name):
     return 0
 
 class DataSetting:
-    def __init__(self, label = 'fold_1/1_normal'):
-        self.dataset = 'colorectal'
+    def __init__(self, label = 'fold_3/2_low_grade'):
+        self.dataset = 'CRC'
         self.label  = label
-        self.root = 'path-to-the-raw-data'#'/research/dept6/ynzhou/gcnn/data/raw'
+        self.root = '/data/hdd1/syh/PycharmProjects/CGC-Net/data_final_add/raw'#'/research/dept6/ynzhou/gcnn/data/raw'
         self.test_data_path = os.path.join(self.root, self.dataset, self.label)
-        self.save_path = 'save-path-to-the-proto-data'#'/research/dept6/ynzhou/gcnn/data/proto'
+        self.save_path = '/data/hdd1/syh/PycharmProjects/CGC-Net/data_final_add/proto'#'/research/dept6/ynzhou/gcnn/data/proto'
         self.do_eval = False
         self.test_image_list = os.listdir(self.test_data_path)
         self.test_image_list = [f for f in self.test_image_list if 'png' in f]
         self.test_data = self.test_image_list
+        self.des_path_mask = '/data/hdd1/syh/PycharmProjects/CGC-Net/data_final_add/all_dark'
+        self.des_path_mask_png = '/data/hdd1/syh/PycharmProjects/CGC-Net/data_final_add/all_dark_png'
+        self.des_path_raw = '/data/hdd1/syh/PycharmProjects/CGC-Net/data_final_add/all_raw'
 
 
 class GraphSetting(DataSetting):
@@ -53,14 +58,30 @@ def _get_batch_features_new(numpy_queue, info_queue):
         name = numpy_queue.get()
         if name != 'end':
             # prepare original image
-            mask = np.load(os.path.join(self.save_path, 'mask',self.dataset, self.label, name))
-            H,W = mask.shape
+            mask_npy = os.path.join(self.save_path, 'mask', self.dataset, self.label, name)
+            raw_png = os.path.join(self.test_data_path, name.replace('.npy', '.png'))
+            mask = np.load(mask_npy)
+            des_mask_path = os.path.join(self.des_path_mask, self.dataset, self.label)
+            des_mask_path_png = os.path.join(self.des_path_mask_png, self.dataset, self.label)
+            des_raw_path = os.path.join(self.des_path_raw, self.dataset, self.label)
+            mask_png = mask_npy.replace('.npy', '.png')
+            # mask = np.load(os.path.join(self.save_path, 'mask',self.dataset, self.label, name))
+            # print('mask.shape' + str(mask.shape))
+            # print('type(mask.shape)' + str(type(mask.shape)))
+            H,W = mask.shape[0], mask.shape[1]
             mask = remove_small_objects(mask, min_size=10, connectivity=1, in_place=True)
-            ori_image = cv2.imread(os.path.join(self.test_data_path, name.replace('.npy', '.tif')))
+            ori_image = cv2.imread(os.path.join(self.test_data_path, name.replace('.npy', '.png')))
+            # print("ori_image shape " + str(ori_image.shape))
+            # cv2.COLOR_BGR2GRAY 会让图片变黄，将三维图片转换为二维
             int_image = cv2.cvtColor(ori_image, cv2.COLOR_BGR2GRAY)
+            # print("int_image1 shape " + str(int_image.shape))
             int_image = cv2.resize(int_image, (W,H), interpolation=cv2.INTER_LINEAR)
+            # print("int_image2 shape " + str(int_image.shape))
             entropy = Entropy(int_image, disk(3))
+            # print("int_image3 shape " + str(int_image.shape))
+            # regionprops用来测量标记图像区域的属性，比如连通域的面积，外接矩形的面积，连通域的质心等等
             props = regionprops(mask)
+            # 将mask变成一个二值图像
             binary_mask = mask.copy()
             binary_mask[binary_mask>0]= 1
             node_feature = []
@@ -72,7 +93,9 @@ def _get_batch_features_new(numpy_queue, info_queue):
                 single_mask = binary_mask[bbox[0]: bbox[2]+1, bbox[1]:bbox[3]+1].astype(np.uint8)
 
                 single_int = int_image[bbox[0]: bbox[2]+1, bbox[1]:bbox[3]+1]
+                # 提取质心特征，centroid表示质心坐标
                 coor = prop.centroid
+                # single_mask代指mask图像，single_int代指原始的图像，根据两种图像的不同提取出细胞核的16种特征
                 mean_im_out, diff, var_im, skew_im = nuc_stats_new(single_mask,single_int)
                 glcm_feat = nuc_glcm_stats_new(single_mask, single_int) # just breakline for better code
                 glcm_contrast, glcm_dissimilarity, glcm_homogeneity, glcm_energy, glcm_ASM = glcm_feat
@@ -116,14 +139,27 @@ def _get_batch_features_new(numpy_queue, info_queue):
                 node_feature.append(feature)
                 node_coordinate.append(coor)
 
-            node_feature = np.vstack(node_feature)
-            node_coordinate = np.vstack(node_coordinate)
-            np.save(os.path.join(self.feature_save_path, name), node_feature.astype(np.float32))
-            np.save(os.path.join(self.distance_save_path, name), node_coordinate.astype(np.float32))
-            euc_dist(os.path.join(self.distance_save_path, name))
+            # print("len(node_feature) : " + str(len(node_feature)))
+            if len(node_feature) == 0:
+                ## TODO 会出现错误ValueError: need at least one array to concatenate
+                # print("0 name :" + name)
+                # all_dark_list.append(name)
+                shutil.move(mask_npy, des_mask_path)
+                shutil.move(mask_png, des_mask_path_png)
+                shutil.move(raw_png, des_raw_path)
+            else:
+                node_feature = np.vstack(node_feature)
+                node_coordinate = np.vstack(node_coordinate)
+
+                # 把特征表示和质心表示都存储起来
+                np.save(os.path.join(self.feature_save_path, name), node_feature.astype(np.float32))
+                np.save(os.path.join(self.distance_save_path, name), node_coordinate.astype(np.float32))
+
+                # 计算质心之间的euc_dist
+                euc_dist(os.path.join(self.distance_save_path, name))
 
 
-            info_queue.put(name)
+                info_queue.put(name)
         else:
             break
 
@@ -131,14 +167,15 @@ if __name__ == '__main__':
     setting = GraphSetting()
     nameQueue = multiprocessing.Queue()
     infoQueue = multiprocessing.Queue()
+    # all_dark_list = []
 
     for i in setting.numpy_list:
         nameQueue.put(i)
     nameQueue.put('end')
     Process_C = []
-    for i in range(32):
+    for i in range(10):
         Process_C.append(multiprocessing.Process(target=_get_batch_features_new, args=(nameQueue, infoQueue)))
-    for i in range(32):
+    for i in range(10):
         Process_C[i].start()
 
     total = len(setting.numpy_list)
@@ -148,13 +185,14 @@ if __name__ == '__main__':
         finish_name = infoQueue.get(1)
         if finish_name in setting.numpy_list:
             finished += 1
-        if finished % 10 == 0:
+        if finished % 5 == 0:
             print('Finish %d/%d'%(finished, total))
         if token_info:
             print('finished')
-            time.sleep(5000)
-            for i in range(32):
+            time.sleep(10)
+            for i in range(10):
                 Process_C[i].terminate()
-            for i in range(32):
+            for i in range(10):
                 Process_C[i].join()
-
+            break
+    # print("all_dark_list: " + str(all_dark_list))

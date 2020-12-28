@@ -1,0 +1,64 @@
+1. construct_feature_graph.py
+
+原本代码中：
+save_path中的mask好像是npy文件，test_data_path中的图片是tif文件
+mask的shape是3584,3584
+首先移除mask中的小目标
+#####
+可以把hover_net生成的mask由png转为npy，test_data_path中图片改为png文件
+H，W代表的是mask的shape
+由hover_net生成的mask是三通道的三维图像，而其他正常的instance_label都是单通道的二维图像（比如Glas数据集的instance_label），这个是否有影响？
+
+目前已经把mask生成了底色是黑的图像(1 channel和3 channel)
+可以使用这个把图片转成二维的，这样后面再运行construct_feature_graph时，可以把mask正常转换为2值图像：image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+
+
+2.prepare_cv_dataset.py
+
+运行时会出现FileNotFoundError: [Errno 2] No such file or directory: '/data/hdd1/syh/PycharmProjects/CGC-Net/data/proto/fix_fuse_hover_knn/0/fold_1/1_normal/Patient_013_03_Normal.pt
+存疑：存储模型为什么会出现这种错误？
+目前发现有些可以正常存储
+
+3.data.py
+
+运行时会出现FileNotFoundError: [Errno 2] No such file or directory: '/data/hdd1/syh/PycharmProjects/CGC-Net/data/proto/cross_val/fold_1'
+存疑：cross_val对应的fold里面存储的是什么？什么格式的信息？到底是以什么格式输入到网络中的？
+
+在加载时，使用torch.load加载数据（data），可以像之前prepare_cv_dataset一样torch.save图的数据
+
+把图片划分为了不同的1792*1792的patch，这一步是在哪操作的？
+Hi! We pre-process the larger ROI images (patient-level) into patches with the resolution of 1792*1792 and store them in folders.
+第290行'patch_idx': idx，idx应该是0、1、2，patch的序号是这些，是什么意思？
+
+TEST:
+换了一种细胞核格式（单通道，二维数据），从头开始尝试
+
+
+def sparse_to_dense(edge_index, edge_attr=None, num_nodes=None):
+    r"""Converts a sparse adjacency matrix given by edge indices and edge
+    attributes to a dense adjacency matrix.
+
+    Args:
+        edge_index (LongTensor): The edge indices.
+        edge_attr (Tensor): Edge weights or multi-dimensional edge features.
+        num_nodes (int, optional): The number of nodes, *i.e.*
+            :obj:`max_val + 1` of :attr:`index`. (default: :obj:`None`)
+
+    :rtype: :class:`Tensor`
+    """
+    N = maybe_num_nodes(edge_index, num_nodes)
+
+    if edge_attr is None:
+        edge_attr = torch.ones(edge_index.size(1), device=edge_index.device)
+
+    adj = torch.sparse_coo_tensor(edge_index, edge_attr, torch.Size([N, N]))
+    return adj.to_dense()
+
+
+4. train.py
+
+当跑train.py时，会调用data.py中的代码进行数据读取，如果设置dynamic_graph=False，那么需要把147行的文件夹路径修改掉
+
+
+因为安装的pytorch_geometric版本不匹配会出现好多问题，把1.2.1中的东西融合进来就好了

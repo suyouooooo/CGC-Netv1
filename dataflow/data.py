@@ -9,6 +9,7 @@ import numpy as np
 from tqdm import tqdm
 from common.utils import FarthestSampler,filter_sampled_indice
 from torch_geometric.utils import sparse_to_dense, dense_to_sparse
+# from torch_geometric.utils import to_dense_adj, dense_to_sparse
 from setting import CrossValidSetting
 
 
@@ -110,6 +111,10 @@ def prepare_train_val_loader(args):
 
 class NucleiDataset(Dataset):
 
+    @property
+    def processed_dir(self):
+        return self._processed_dir
+
     def __init__(self, root,  feature_type, transform=None, pre_transform=None, split = 'train',
                  sampling_time = 10, sampling_ratio = 0.5, normalize = False, dynamic_graph = False, sampling_method = 'farthest',
                 datasetting = None,neighbour = 8, graph_sampler = 'knn',crossval = 1):
@@ -138,12 +143,14 @@ class NucleiDataset(Dataset):
             np.random.seed(1024)
         else:
             np.random.seed(None)
-        _process_name = 'cross_val'
+        # _process_name = 'cross_val'
+        _process_name = 'fix_fuse_hover_knn/0'
         self.processed_dir = []
         for fold in _CROSS_VAL[self.cross_val][split]:
+            # print("cross path is   " + str(osp.join(self.root, 'proto', _process_name, fold)))
             self.processed_dir.append(osp.join(self.root, 'proto', _process_name, fold))
         self.processed_root = os.path.join(self.root, 'proto', _process_name)
-        self.processed_fix_data_root =  os.path.join(self.root, 'proto', 'fix_fuse_cia_knn')
+        self.processed_fix_data_root =  os.path.join(self.root, 'proto', 'fix_fuse_hover_knn')
         self.original_files = []
         self.original_files = [ f.split('.npy')[0] for f in self.original_files ]
         self.mean =  _MEAN_CIA[crossval]
@@ -159,6 +166,8 @@ class NucleiDataset(Dataset):
         self.label_name = {'High': 2, 'Low': 1, 'Normal': 0, 'grade_2': 1, 'grade_1': 0, 'grade_3': 2}
         self.idxlist = []
         for folder in self.processed_dir:
+            # print("folder is : " + str(folder))
+            # print("idxlist : " + str([os.path.join(folder.split('/')[-1],f) for f in os.listdir(folder)]))
             self.idxlist.extend([os.path.join(folder.split('/')[-1],f) for f in os.listdir(folder)])
         self.feature_type = feature_type
 
@@ -196,7 +205,7 @@ class NucleiDataset(Dataset):
 
         if self.sampling_by_ratio:
             num_subsample = int(num_sample * ratio)
-            if self.task != 'colon':
+            if self.task != 'CRC':
                 if num_sample < 100:
                     num_subsample = num_sample
 
@@ -245,15 +254,18 @@ class NucleiDataset(Dataset):
             if self.graph_sampler == 'knn':
                 edge_index = radius_graph(data.pos, self.max_edge_distance, None, True, self.max_neighbours)
                 adj = sparse_to_dense(edge_index)
+                # adj = to_dense_adj(edge_index)
             else:
                 raise NotImplementedError
             adj[adj>0] = 1
             adj_all[: sample_num_node, :sample_num_node] = adj
         else:
+            # print("NucleiDataset data path is : " + str(osp.join(self.processed_fix_data_root, str(self.epoch), self.idxlist[idx])))
             data = torch.load(osp.join(self.processed_fix_data_root, str(self.epoch), self.idxlist[idx]))
             if self.graph_sampler == 'knn':
                 edge_index = radius_graph(data.pos, self.max_edge_distance, None, True, self.max_neighbours)
                 adj = sparse_to_dense(edge_index)
+                # adj = to_dense_adj(edge_index)
             else:
                 raise NotImplementedError
             num_nodes = adj.shape[0]
@@ -278,6 +290,11 @@ class NucleiDataset(Dataset):
             'num_nodes': sample_num_node if self.dynamic_graph else num_nodes,
             'patch_idx': idx}
 
+    @processed_dir.setter
+    def processed_dir(self, value):
+        self._processed_dir = value
+
+
 class NucleiDatasetTest(NucleiDataset):
     def __init__(self, root, feature_type, transform=None, pre_transform=None, split = 'train',
                  normalize=False,
@@ -296,6 +313,7 @@ class NucleiDatasetTest(NucleiDataset):
         if self.graph_sampler == 'knn':
             edge_index = radius_graph(data.pos, self.max_edge_distance, None, True, self.max_neighbours)
             adj_all = sparse_to_dense(edge_index)
+            # adj_all = to_dense_adj(edge_index)
         else:
             raise NotImplementedError
         adj_all[adj_all>0]= 1

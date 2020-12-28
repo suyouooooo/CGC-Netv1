@@ -118,7 +118,7 @@ def gen_prefix(args):
         name+=args.activation
     if args.readout =='mix':
         name+=args.readout
-    if args.task != 'colon':
+    if args.task != 'CRC':
         name+=('_'+args.task)
     if args.mask !='cia':
         name +='hvnet'
@@ -147,6 +147,11 @@ def train(dataset, model, args,  val_dataset=None, test_dataset=None, writer=Non
         scheduler = lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
     cudnn.benchmark = True
     iter = 0
+    val_result={
+            'epoch': 0,
+            'loss': 0,
+            'img_acc': 0,
+            'patch_acc': 0 }
     best_val_result = {
             'epoch': 0,
             'loss': 0,
@@ -170,11 +175,18 @@ def train(dataset, model, args,  val_dataset=None, test_dataset=None, writer=Non
         avg_loss = 0.0
         model.train()
         print('Epoch: ', epoch)
+        # print("type dataset: " + str(type(dataset)))
         dataset.dataset.set_epoch(epoch)
         with tqdm(bar_format='{desc}{postfix}') as tq:
             for batch_idx, data in enumerate(tqdm(dataset)):
                 train_iter += 40
                 begin_time = time.time()
+                # data is list type, 里面存的是图数据，包括坐标等等
+                # data = np.squeeze(data)
+                # print("data type " + str(type(data)))
+                # print("data shape " + str(data.shape))
+                # print(data)
+                # print("data length :" + str(len(data)))
                 _, cls_loss = model(data)
                 cls_loss = torch.mean(cls_loss)
                 loss =  cls_loss
@@ -249,7 +261,7 @@ def cell_graph(args, writer = None):
     train_loader, val_loader, test_loader = prepare_train_val_loader(args)
     setting = DataSetting()
     input_dim = args.input_feature_dim
-    if args.task == 'colon':
+    if args.task == 'CRC':
         args.num_classes = 3
     model = network.SoftPoolingGcnEncoder(setting.max_num_nodes,
         input_dim, args.hidden_dim, args.output_dim, True, True, args.hidden_dim,  args.num_classes,
@@ -286,6 +298,7 @@ def cell_graph(args, writer = None):
         else:
             model = model.cuda()
     if not args.skip_train:
+        # 如果不跳过训练，就执行下面的操作
         if args.resume:
             _, val_accs = train(train_loader, model, args, val_dataset=val_loader, test_dataset=None,
             writer=writer, checkpoint = checkpoint)
@@ -365,8 +378,8 @@ def arg_parse():
 
     parser.add_argument('--norm_adj',action='store_const', const=True, default=False,)
     parser.add_argument('--readout', default='max', type=str)
-    parser.add_argument('--task', default= 'colon', type = str)
-    parser.add_argument('--mask',default='cia', type=str)
+    parser.add_argument('--task', default= 'CRC', type = str)
+    parser.add_argument('--mask',default='hover', type=str)
     parser.add_argument('--n',dest='neighbour', default=8, type=int)
     parser.add_argument('--sample_ratio',default=0.5, type=float)
     parser.add_argument('--drop',dest= 'drop_out' ,default=0.,type=float)
@@ -386,8 +399,8 @@ def arg_parse():
                         feature='cl',
                         lr=0.001,
                         clip=2.0,
-                        batch_size=3,
-                        num_epochs=1000,
+                        batch_size=40,
+                        num_epochs=30,
                         num_workers=4,
                         input_dim=10,
                         hidden_dim=20,

@@ -2,8 +2,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import DenseSAGEConv,DenseGINConv
 import torch
-from torch_geometric.utils import to_dense_batch
-from model.utils import to_dense_adj
+# from torch_geometric.utils import to_dense_batch
+# from model.utils import to_dense_adj
+from model.utils import to_dense_batch
+from torch_geometric.utils import to_dense_adj
 from torch.nn import Linear, LSTM
 EPS = 1e-15
 import pdb
@@ -44,6 +46,7 @@ class DenseJK(nn.Module):
         xs = torch.stack(xs,2)#[batch, nodes, num_layers, num_channels]
         shape = xs.shape
         x = xs.reshape((-1,shape[2],shape[3]))  # [ngraph * num_nodes , num_layers, num_channels]
+        self.lstm.flatten_parameters()
         alpha, _ = self.lstm(x)
         alpha = self.att(alpha).squeeze(-1)  # [ngraph * num_nodes, num_layers]
         alpha = torch.softmax(alpha, dim=-1)
@@ -171,11 +174,32 @@ class SoftPoolingGcnEncoder(nn.Module):
 
     @staticmethod
     def construct_mask( max_nodes, batch_num_nodes):
+        ##出现原本以下TODO的问题是因为版本不匹配，导致一个batch_num_nodes是longtensor，另外一个是booltensor，把正确版本里的东西导出来就可以了
+
         # masks
+        ## TODO 使用这个方式的时候出现错误ValueError: only one element tensors can be converted to Python scalars
         packed_masks = [torch.ones(int(num)) for num in batch_num_nodes]
+        ## TODO 修改成下面这个形式，会出现错误TypeError: can't assign a numpy.ndarray to a torch.FloatTensor
+        # packed_masks = [num.cpu().numpy() for num in batch_num_nodes]
+
+        # type batch_num_nodes: <class 'torch.Tensor'>
+        # print("type batch_num_nodes: " + str(type(batch_num_nodes)))
+        # packed_masks = []
+        # for num in batch_num_nodes:
+        #     # print("type num: " + str(type(num)))
+        #     # print("num: " + str(num))
+        #     # tf.cast(c, tf.float32)
+        #     # tmp_int = len(num)
+        #     # type num: <class 'torch.Tensor'>
+        #     # num: tensor([True, True ...])
+        #     # print("num.size():" + str(num.size()))
+        #     packed_masks.append(torch.ones(num.size()))
+
         batch_size = len(batch_num_nodes)
         out_tensor = torch.zeros(batch_size, max_nodes)
         for i, mask in enumerate(packed_masks):
+            # TODO 目前在这一行会遇到错误TypeError: only integer tensors of a single element can be converted to an index
+            ## TODO 猜测这是因为batch_num_nodes[i]的错误
             out_tensor[i, :batch_num_nodes[i]] = mask
         return out_tensor.unsqueeze(2).cuda()
 
@@ -239,6 +263,7 @@ class SoftPoolingGcnEncoder(nn.Module):
         x, edge_index, batch = data.x, data.edge_index, data.batch
         label = data.y
         edge_index = to_dense_adj(edge_index, batch)
+        # edge_index = to_dense_adj(edge_index)
         x ,batch_num_node= to_dense_batch(x, batch)
         return x, edge_index,batch_num_node,label
 
@@ -248,6 +273,8 @@ class SoftPoolingGcnEncoder(nn.Module):
         out_all = []
         mean_all = []
         self.assign_matrix = []
+        ## data type is <class 'torch_geometric.data.batch.Batch'>
+        # print("data type : " + str(type(data)))
         if self.load_data_sparse:
                 x, adj, batch_num_nodes, label = self._sparse_to_dense_input(data)
         else:
